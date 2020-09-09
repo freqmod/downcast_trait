@@ -56,10 +56,10 @@ use core::{any::{Any, TypeId}, mem};
 /// trait Widget: DowncastTrait {}
 /// ```
 pub trait DowncastTrait {
-    fn convert_to_trait<'a>(&'a self, trait_id: TypeId) -> Option<&'a (dyn Any)>;
-    fn convert_to_trait_mut<'a>(&'a mut self, trait_id: TypeId) -> Option<&'a mut (dyn Any)>;
-    fn to_downcast_trait<'a>(&'a self) -> &'a dyn DowncastTrait;
-    fn to_downcast_trait_mut<'a>(&'a mut self) -> &'a mut dyn DowncastTrait;
+    fn convert_to_trait(& self, trait_id: TypeId) -> Option<& (dyn Any)>;
+    fn convert_to_trait_mut(& mut self, trait_id: TypeId) -> Option<& mut (dyn Any)>;
+    fn to_downcast_trait(& self) -> & dyn DowncastTrait;
+    fn to_downcast_trait_mut(& mut self) -> & mut dyn DowncastTrait;
 }
 
 /// This macro can be used to cast a &dyn DowncastTrait to an implemented trait e.g:
@@ -73,9 +73,9 @@ pub trait DowncastTrait {
 #[macro_export]
 macro_rules! downcast_trait {
     ( dyn $type:path, $src:expr) => {{
-        fn transmute_helper<'a>(src: &'a dyn DowncastTrait) -> Option<&'a dyn $type> {
+        fn transmute_helper(src: & dyn DowncastTrait) -> Option<& dyn $type> {
             src.convert_to_trait(TypeId::of::<dyn $type>())
-                .map(|dst| unsafe { mem::transmute::<&'a (dyn Any), &'a (dyn $type + 'a)>(dst) })
+                .map(|dst| unsafe { mem::transmute::<& (dyn Any), & (dyn $type + )>(dst) })
         }
         transmute_helper($src)
     }};
@@ -92,10 +92,10 @@ macro_rules! downcast_trait {
 #[macro_export]
 macro_rules! downcast_trait_mut {
     ( dyn $type:path, $src:expr) => {{
-        fn transmute_helper<'a>(src: &'a mut dyn DowncastTrait) -> Option<&'a mut dyn $type> {
+        fn transmute_helper(src: & mut dyn DowncastTrait) -> Option<& mut dyn $type> {
             src.convert_to_trait_mut(TypeId::of::<dyn $type>())
                 .map(|dst| unsafe {
-                    mem::transmute::<&'a mut (dyn Any), &'a mut (dyn $type + 'a)>(dst)
+                    mem::transmute::<& mut (dyn Any), & mut (dyn $type + )>(dst)
                 })
         }
         transmute_helper($src)
@@ -113,7 +113,7 @@ macro_rules! downcast_trait_mut {
 macro_rules! downcast_trait_impl_convert_to
 {
     ($(dyn $type:path),+) => {
-        fn convert_to_trait<'a>(&'a self, trait_id: TypeId) -> Option<&'a (dyn Any)> {
+        fn convert_to_trait(& self, trait_id: TypeId) -> Option<& (dyn Any)> {
             if false
             {
                None
@@ -122,8 +122,8 @@ macro_rules! downcast_trait_impl_convert_to
             else if trait_id == TypeId::of::<dyn $type>()
             {
                unsafe {
-                   Some(mem::transmute::<&'a (dyn $type + 'a), &'a dyn Any>(
-                       self as &'a (dyn $type + 'a)
+                   Some(mem::transmute::<& (dyn $type + ), & dyn Any>(
+                       self as & (dyn $type + )
                    ))
                }
             }
@@ -134,7 +134,7 @@ macro_rules! downcast_trait_impl_convert_to
             }
         }
 
-        fn convert_to_trait_mut<'a>(&'a mut self, trait_id: TypeId) -> Option<&'a mut (dyn Any)> {
+        fn convert_to_trait_mut(& mut self, trait_id: TypeId) -> Option<& mut (dyn Any)> {
             if false
             {
                None
@@ -143,8 +143,8 @@ macro_rules! downcast_trait_impl_convert_to
             else if trait_id == TypeId::of::<dyn $type>()
             {
                unsafe {
-                   Some(mem::transmute::<&'a mut (dyn $type + 'a), &'a mut dyn Any>(
-                       self as &'a mut (dyn $type + 'a)
+                   Some(mem::transmute::<& mut (dyn $type + ), & mut dyn Any>(
+                       self as & mut (dyn $type + )
                    ))
                }
             }
@@ -155,12 +155,12 @@ macro_rules! downcast_trait_impl_convert_to
             }
         }
 
-        fn to_downcast_trait<'a>(&'a self) -> &'a dyn DowncastTrait
+        fn to_downcast_trait(& self) -> & dyn DowncastTrait
         {
             self
         }
 
-        fn to_downcast_trait_mut<'a>(&'a mut self) -> &'a mut dyn DowncastTrait
+        fn to_downcast_trait_mut(& mut self) -> & mut dyn DowncastTrait
         {
             self
         }
@@ -194,14 +194,13 @@ mod tests {
     }
 
     #[test]
-    fn exploration<'a>() {
+    fn exploration() {
         let mut tst = Downcastable { val: 0 };
         let ts: &mut dyn DowncastTrait = tst.to_downcast_trait_mut();
         let downcasted_maybe = downcast_trait!(dyn Downcasted, ts);
         if let Some(downcasted) = downcasted_maybe {
             assert_eq!(downcasted.get_number(), 123);
         }
-        //drop(tst);
         let downcasted_maybe2 = downcast_trait!(dyn Downcasted2, ts);
         if let Some(downcasted2) = downcasted_maybe2 {
             assert_eq!(downcasted2.get_number(), 456);
