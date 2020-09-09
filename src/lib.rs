@@ -2,6 +2,11 @@
 #![allow(unused_imports)]
 //!
 //! Downcast trait: A module to support downcasting dyn traits using [core::any].
+//! This trait is similar to [intertrait](https://crates.io/crates/intertrait), but does not require
+//! to make a hashtable or any fancy linker magic. For certain cases all casting is optimized away.
+//!
+//! This crate uses transmute (which is generally considered unsafe rust) to pass an unknown type
+//!  as a return value from a function, but the value is then transmuted back to the original type.
 //!
 //! Downcast traits enables callers to convert dyn objects that implement the
 //! DowncastTrait trait to any trait that is supported by the struct implementing the trait.
@@ -47,19 +52,30 @@
 //!     downcast_trait_impl_convert_to!(dyn Container);
 //! }
 //! ```
-use core::{any::{Any, TypeId}, mem};
+use core::{
+    any::{Any, TypeId},
+    mem,
+};
 
 /// This trait should be implemented by any structs that or traits that should be downcastable
 /// to dowcast to one or more traits. The functions required by this trait should be implemented
-/// using the [downcast_trait_impl_convert_to<](macro.downcast_trait_impl_convert_to.html) macro.
+/// using the [downcast_trait_impl_convert_to](macro.downcast_trait_impl_convert_to.html) macro.
 /// ```ignore
 /// trait Widget: DowncastTrait {}
 /// ```
 pub trait DowncastTrait {
-    fn convert_to_trait(& self, trait_id: TypeId) -> Option<& (dyn Any)>;
-    fn convert_to_trait_mut(& mut self, trait_id: TypeId) -> Option<& mut (dyn Any)>;
-    fn to_downcast_trait(& self) -> & dyn DowncastTrait;
-    fn to_downcast_trait_mut(& mut self) -> & mut dyn DowncastTrait;
+    /// # Safety
+    /// This function is called by the [downcast_trait](macro.downcast_trait.html) macro and should
+    /// not be accessed directly.
+    unsafe fn convert_to_trait(&self, trait_id: TypeId) -> Option<&(dyn Any)>;
+    /// # Safety
+    /// This function is called by the [downcast_trait_mut](macro.downcast_trait_mut.html) macro
+    /// and should not be accessed directly.
+    unsafe fn convert_to_trait_mut(&mut self, trait_id: TypeId) -> Option<&mut (dyn Any)>;
+    /// This macro is used to cast any implementer of this trait to a DowncastTrait
+    fn to_downcast_trait(&self) -> &dyn DowncastTrait;
+    /// This macro is used to cast any implementer of this trait to a mut DowncastTrait
+    fn to_downcast_trait_mut(&mut self) -> &mut dyn DowncastTrait;
 }
 
 /// This macro can be used to cast a &dyn DowncastTrait to an implemented trait e.g:
@@ -73,9 +89,11 @@ pub trait DowncastTrait {
 #[macro_export]
 macro_rules! downcast_trait {
     ( dyn $type:path, $src:expr) => {{
-        fn transmute_helper(src: & dyn DowncastTrait) -> Option<& dyn $type> {
-            src.convert_to_trait(TypeId::of::<dyn $type>())
-                .map(|dst| unsafe { mem::transmute::<& (dyn Any), & (dyn $type + )>(dst) })
+        fn transmute_helper(src: &dyn DowncastTrait) -> Option<&dyn $type> {
+            unsafe {
+                src.convert_to_trait(TypeId::of::<dyn $type>())
+                    .map(|dst| mem::transmute::<&(dyn Any), &(dyn $type)>(dst))
+            }
         }
         transmute_helper($src)
     }};
@@ -92,11 +110,11 @@ macro_rules! downcast_trait {
 #[macro_export]
 macro_rules! downcast_trait_mut {
     ( dyn $type:path, $src:expr) => {{
-        fn transmute_helper(src: & mut dyn DowncastTrait) -> Option<& mut dyn $type> {
-            src.convert_to_trait_mut(TypeId::of::<dyn $type>())
-                .map(|dst| unsafe {
-                    mem::transmute::<& mut (dyn Any), & mut (dyn $type + )>(dst)
-                })
+        fn transmute_helper(src: &mut dyn DowncastTrait) -> Option<&mut dyn $type> {
+            unsafe {
+                src.convert_to_trait_mut(TypeId::of::<dyn $type>())
+                    .map(|dst| mem::transmute::<&mut (dyn Any), &mut (dyn $type)>(dst))
+            }
         }
         transmute_helper($src)
     }};
@@ -113,7 +131,7 @@ macro_rules! downcast_trait_mut {
 macro_rules! downcast_trait_impl_convert_to
 {
     ($(dyn $type:path),+) => {
-        fn convert_to_trait(& self, trait_id: TypeId) -> Option<& (dyn Any)> {
+        unsafe fn convert_to_trait(& self, trait_id: TypeId) -> Option<& (dyn Any)> {
             if false
             {
                None
@@ -121,11 +139,9 @@ macro_rules! downcast_trait_impl_convert_to
             $(
             else if trait_id == TypeId::of::<dyn $type>()
             {
-               unsafe {
-                   Some(mem::transmute::<& (dyn $type + ), & dyn Any>(
-                       self as & (dyn $type + )
-                   ))
-               }
+                Some(mem::transmute::<& (dyn $type), & dyn Any>(
+                    self as & (dyn $type)
+                ))
             }
             )*
             else
@@ -134,7 +150,7 @@ macro_rules! downcast_trait_impl_convert_to
             }
         }
 
-        fn convert_to_trait_mut(& mut self, trait_id: TypeId) -> Option<& mut (dyn Any)> {
+        unsafe fn convert_to_trait_mut(& mut self, trait_id: TypeId) -> Option<& mut (dyn Any)> {
             if false
             {
                None
@@ -142,11 +158,9 @@ macro_rules! downcast_trait_impl_convert_to
             $(
             else if trait_id == TypeId::of::<dyn $type>()
             {
-               unsafe {
-                   Some(mem::transmute::<& mut (dyn $type + ), & mut dyn Any>(
-                       self as & mut (dyn $type + )
-                   ))
-               }
+                Some(mem::transmute::<& mut (dyn $type), & mut dyn Any>(
+                    self as & mut (dyn $type)
+                ))
             }
             )*
             else
