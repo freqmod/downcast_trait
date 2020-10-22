@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![allow(unused_imports)]
 //!
 //! Downcast trait: A module to support downcasting dyn traits using [core::any].
@@ -58,7 +58,7 @@ use core::{
 };
 
 /// This trait should be implemented by any structs that or traits that should be downcastable
-/// to dowcast to one or more traits. The functions required by this trait should be implemented
+/// to downcast to one or more traits. The functions required by this trait should be implemented
 /// using the [downcast_trait_impl_convert_to](macro.downcast_trait_impl_convert_to.html) macro.
 /// ```ignore
 /// trait Widget: DowncastTrait {}
@@ -72,10 +72,19 @@ pub trait DowncastTrait {
     /// This function is called by the [downcast_trait_mut](macro.downcast_trait_mut.html) macro
     /// and should not be accessed directly.
     unsafe fn convert_to_trait_mut(&mut self, trait_id: TypeId) -> Option<&mut (dyn Any)>;
-    /// This macro is used to cast any implementer of this trait to a DowncastTrait
+    /// # Safety
+    /// This function is called by the [downcast_trait_mut](macro.downcast_trait_mut.html) macro
+    /// and should not be accessed directly.
+#[cfg(feature = "std")]
+    unsafe fn convert_to_trait_box(self: Box<Self>, trait_id: TypeId) -> Option<Box<dyn Any>>;
+    /// This function is used to cast any implementer of this trait to a DowncastTrait
     fn to_downcast_trait(&self) -> &dyn DowncastTrait;
-    /// This macro is used to cast any implementer of this trait to a mut DowncastTrait
+    /// This function is used to cast any implementer of this trait to a mut DowncastTrait
     fn to_downcast_trait_mut(&mut self) -> &mut dyn DowncastTrait;
+    /// This function is used to cast any implementer of this trait to a Box<DowncastTrait>
+#[cfg(feature = "std")]
+    fn to_downcast_trait_box(self: Box<Self>) -> Box<dyn DowncastTrait>;
+//    fn to_downcast_trait_box(&self) -> Box<&dyn DowncastTrait>;
 }
 
 /// This macro can be used to cast a &dyn DowncastTrait to an implemented trait e.g:
@@ -119,16 +128,31 @@ macro_rules! downcast_trait_mut {
         transmute_helper($src)
     }};
 }
-/// This macro can be used by a struct impl, to implement the functions required by the downcas traitt
-/// to dowcast to one or more traits.
+
+/// This macro can be used to cast a Box<mut DowncastTrait> to an implemented trait e.g:
 /// ```ignore
-/// impl DowncastTrait for Window {
-///     downcast_trait_impl_convert_to!(dyn Container, dyn Scrollable, dyn Clickable);
+/// if let Some(sub_container) =
+///     downcast_trait_box!(dyn Container, Box::new(sub_widget).to_downcast_trait_box())
+/// {
+///   //Use downcasted trait
 /// }
 /// ```
-
 #[macro_export]
-macro_rules! downcast_trait_impl_convert_to
+macro_rules! downcast_trait_box {
+    ( dyn $type:path, $src:expr) => {{
+        fn transmute_helper(src: Box<dyn DowncastTrait>) -> Option<Box<dyn $type>> {
+            unsafe {
+                src.convert_to_trait_box(TypeId::of::<dyn $type>())
+                    .map(|dst| mem::transmute::<Box<dyn Any>, Box<dyn $type>>(dst))
+            }
+        }
+        transmute_helper($src)
+    }};
+}
+
+/// This macro is used internally by [downcast_trait_impl_convert_to](macro.downcast_trait_impl_convert_to.html)
+#[macro_export]
+macro_rules! downcast_trait_impl_convert_to_ref
 {
     ($(dyn $type:path),+) => {
         unsafe fn convert_to_trait(& self, trait_id: TypeId) -> Option<& (dyn Any)> {
@@ -149,7 +173,18 @@ macro_rules! downcast_trait_impl_convert_to
                 None
             }
         }
+        fn to_downcast_trait(& self) -> & dyn DowncastTrait
+        {
+            self
+        }
+    }
+}
 
+/// This macro is used internally by [downcast_trait_impl_convert_to](macro.downcast_trait_impl_convert_to.html)
+#[macro_export]
+macro_rules! downcast_trait_impl_convert_to_mut
+{
+    ($(dyn $type:path),+) => {
         unsafe fn convert_to_trait_mut(& mut self, trait_id: TypeId) -> Option<& mut (dyn Any)> {
             if false
             {
@@ -168,17 +203,67 @@ macro_rules! downcast_trait_impl_convert_to
                 None
             }
         }
-
-        fn to_downcast_trait(& self) -> & dyn DowncastTrait
-        {
-            self
-        }
-
         fn to_downcast_trait_mut(& mut self) -> & mut dyn DowncastTrait
         {
             self
         }
-    };
+    }
+}
+
+/// This macro is used internally by [downcast_trait_impl_convert_to](macro.downcast_trait_impl_convert_to.html)
+#[macro_export]
+#[cfg(feature = "std")]
+macro_rules! downcast_trait_impl_convert_to_box
+{
+    ($(dyn $type:path),+) => {
+        unsafe fn convert_to_trait_box(self: Box<Self>, trait_id: TypeId) -> Option<Box<dyn Any>>{
+            if false{
+               None
+            }
+            $(
+            else if trait_id == TypeId::of::<dyn $type>()
+            {
+                Some(mem::transmute::<Box<dyn $type>, Box<dyn Any>>(
+                    self as Box<dyn $type>
+                ))
+            }
+            )*
+            else
+            {
+                None
+            }
+        }
+        fn to_downcast_trait_box(self: Box<Self>) -> Box<dyn DowncastTrait>
+        {
+            self
+        }
+    }
+}
+
+/// This macro is used internally by [downcast_trait_impl_convert_to](macro.downcast_trait_impl_convert_to.html)
+#[macro_export]
+#[cfg(not(feature = "std"))]
+macro_rules! downcast_trait_impl_convert_to_box
+{
+    ($(dyn $type:path),+) => {
+    }
+}
+
+/// This macro can be used by a struct impl, to implement the functions required by the downcas traitt
+/// to downcast to one or more traits.
+/// ```ignore
+/// impl DowncastTrait for Window {
+///     downcast_trait_impl_convert_to!(dyn Container, dyn Scrollable, dyn Clickable);
+/// }
+/// ```
+#[macro_export]
+macro_rules! downcast_trait_impl_convert_to
+{
+    ($(dyn $type:path),+) => {
+        downcast_trait_impl_convert_to_ref!($(dyn $type),*);
+        downcast_trait_impl_convert_to_mut!($(dyn $type),*);
+        downcast_trait_impl_convert_to_box!($(dyn $type),*);
+    }
 }
 
 #[cfg(test)]
@@ -227,5 +312,15 @@ mod tests {
             }
             None => assert!(false),
         }
+
+        let tst2 = Box::new(Downcastable { val: 0 });
+        let downcasted_maybebox = downcast_trait_box!(dyn Downcasted2, tst2);
+        match downcasted_maybebox {
+            Some(downcasted_mut) => {
+                assert_eq!(downcasted_mut.get_number(), 456);
+            }
+            None => assert!(false),
+        }
+
     }
 }

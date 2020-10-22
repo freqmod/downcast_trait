@@ -11,3 +11,9 @@ keywords = ["trait", "cast", "any"]
 include = ["src/**/*", "Cargo.toml", "LICENSE-*", "README.md"]
 
 [dependencies]
+
+
+
+[features]
+std = []
+default = ["std"]
