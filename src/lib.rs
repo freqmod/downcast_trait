@@ -154,7 +154,7 @@ macro_rules! downcast_trait_box {
 #[macro_export]
 macro_rules! downcast_trait_impl_convert_to_ref
 {
-    ($(dyn $type:path),+) => {
+    ($(dyn $type:path),*) => {
         unsafe fn convert_to_trait(& self, trait_id: TypeId) -> Option<& (dyn Any)> {
             if false
             {
@@ -184,7 +184,7 @@ macro_rules! downcast_trait_impl_convert_to_ref
 #[macro_export]
 macro_rules! downcast_trait_impl_convert_to_mut
 {
-    ($(dyn $type:path),+) => {
+    ($(dyn $type:path),*) => {
         unsafe fn convert_to_trait_mut(& mut self, trait_id: TypeId) -> Option<& mut (dyn Any)> {
             if false
             {
@@ -215,7 +215,7 @@ macro_rules! downcast_trait_impl_convert_to_mut
 #[cfg(feature = "std")]
 macro_rules! downcast_trait_impl_convert_to_box
 {
-    ($(dyn $type:path),+) => {
+    ($(dyn $type:path),*) => {
         unsafe fn convert_to_trait_box(self: Box<Self>, trait_id: TypeId) -> Option<Box<dyn Any>>{
             if false{
                None
@@ -243,10 +243,8 @@ macro_rules! downcast_trait_impl_convert_to_box
 /// This macro is used internally by [downcast_trait_impl_convert_to](macro.downcast_trait_impl_convert_to.html)
 #[macro_export]
 #[cfg(not(feature = "std"))]
-macro_rules! downcast_trait_impl_convert_to_box
-{
-    ($(dyn $type:path),+) => {
-    }
+macro_rules! downcast_trait_impl_convert_to_box {
+    ($(dyn $type:path),*) => {};
 }
 
 /// This macro can be used by a struct impl, to implement the functions required by the downcas traitt
@@ -259,7 +257,7 @@ macro_rules! downcast_trait_impl_convert_to_box
 #[macro_export]
 macro_rules! downcast_trait_impl_convert_to
 {
-    ($(dyn $type:path),+) => {
+    ($(dyn $type:path),*) => {
         downcast_trait_impl_convert_to_ref!($(dyn $type),*);
         downcast_trait_impl_convert_to_mut!($(dyn $type),*);
         downcast_trait_impl_convert_to_box!($(dyn $type),*);
@@ -321,6 +319,5 @@ mod tests {
             }
             None => assert!(false),
         }
-
     }
 }
